@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-livestream-to-ice-cast = "livestream_to_icecast.app:main"
+livestream-to-icecast = "livestream_to_icecast.app:main"
 
 [tool.uv]
 package = true

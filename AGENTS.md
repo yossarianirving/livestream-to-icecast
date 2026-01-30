@@ -1,4 +1,4 @@
-# Agent Guidelines for `livestream-to-ice-cast`
+# Agent Guidelines for `livestream-to-icecast`
 
 ## Table of Contents
 - [Build, Lint & Test Commands](#build-lint--test-commands)
@@ -30,7 +30,7 @@
   ```
 ### Build / Installation
 - The package is pure‑Python; no compilation step required.
-- Entry point defined in `pyproject.toml` as `livestream-to-ice-cast`.
+- Entry point defined in `pyproject.toml` as `livestream-to-icecast`.
 ### Linting & Formatting
 ```bash
 ruff check .          # static analysis
@@ -39,7 +39,7 @@ black .              # code formatter (line length 88)
 ```
 ### Type Checking (optional)
 ```bash
-mypy livestream_to_ice_cast
+mypy livestream_to_icecast
 ```
 ### Testing
 - Install pytest if not already present:
@@ -77,8 +77,8 @@ from pathlib import Path
 import tomllib  # or tomli on <3.11
 
 # Project modules (absolute imports)
-from livestream_to_ice_cast.config import AppConfig, load_config
-from livestream_to_ice_cast.yt_dlp_helper import get_m3u8_url, is_live
+from livestream_to_icecast.config import AppConfig, load_config
+from livestream_to_icecast.yt_dlp_helper import get_m3u8_url, is_live
 ```
 - Blank line separates each group.
 - No wildcard imports.
@@ -116,7 +116,7 @@ def get_m3u8_url(channel_url: str) -> Optional[str]:
 - Use the standard `logging` module; never `print` in production code.
 ```python
 import logging
-log = logging.getLogger("livestream-to-ice-cast")
+log = logging.getLogger("livestream-to-icecast")
 ```
 - Raise specific exceptions (`ValueError`, `FileNotFoundError`, `RuntimeError`).
 - Avoid bare `except:`; use `except Exception as exc:` and log or re‑raise.
@@ -168,7 +168,7 @@ def test_load_config_success(tmp_path: Path):
     source_user = "src"
     source_password = "pwd"
     """)
-    from livestream_to_ice_cast.config import load_config
+    from livestream_to_icecast.config import load_config
     cfg = load_config(cfg_file)
     assert cfg.icecast.port == 8000
 ```
@@ -200,7 +200,7 @@ jobs:
           ruff check .
           black --check .
       - name: Type check
-        run: mypy livestream_to_ice_cast
+        run: mypy livestream_to_icecast
       - name: Test
         run: pytest -q
 ```
@@ -215,4 +215,4 @@ jobs:
 
 ---
 
-*This document serves as a single source of truth for building, linting, testing, and coding standards in the `livestream-to-ice-cast` project.*
+*This document serves as a single source of truth for building, linting, testing, and coding standards in the `livestream-to-icecast` project.*
