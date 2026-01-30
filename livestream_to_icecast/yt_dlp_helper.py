@@ -8,7 +8,7 @@ output.  All error handling is performed by raising ``RuntimeError`` (or returni
 
 from __future__ import annotations
 
-import json
+
 import logging
 import subprocess
 from typing import Optional
@@ -34,27 +34,20 @@ def _run_yt_dlp(args: list[str]) -> str:
 
 
 def is_live(channel_url: str) -> bool:
-    """Return ``True`` if *channel_url* currently has a live broadcast.
+    """Return ``True`` if *channel_url* appears to be a live broadcast.
 
-    The function asks yt‑dlp for JSON metadata (``-j``).  The returned dictionary may be a
-    single video entry or a playlist with an ``entries`` list – we handle both cases.
+    The original implementation queried yt‑dlp for JSON metadata (``-j``), which can be
+    slow.  Instead we now attempt to retrieve the best‑audio URL using ``yt-dlp -g``
+    via :func:`get_m3u8_url`. If any stream URL is returned, we treat the channel as live.
+    This approach is faster and aligns with the updated requirement.
     """
     try:
-        json_text = _run_yt_dlp(["-j", "--skip-download", channel_url])
-        info = json.loads(json_text)
-
-        # yt‑dlp can return a playlist dict that contains an ``entries`` array.
-        if isinstance(info, dict) and "entries" in info:
-            for entry in info["entries"] or []:
-                if entry and entry.get("is_live"):
-                    return True
-            return False
-
-        # Single video case – the key may be missing, default to ``False``.
-        return bool(info.get("is_live"))
-    except Exception:
-        # Any problem (network, parsing…) is treated as "not live" to avoid false
-        # positives.
+        # Reuse the existing helper that extracts the best‑audio (usually HLS) URL.
+        url = get_m3u8_url(channel_url)
+        # If any stream URL is obtained, consider the channel as live.
+        return bool(url)
+    except Exception as exc:  # pragma: no cover – defensive fallback
+        log.debug("is_live check failed: %s", exc)
         return False
 
 
