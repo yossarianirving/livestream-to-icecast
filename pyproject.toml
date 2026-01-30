@@ -1,0 +1,20 @@
+[project]
+name = "livestream-to-icecast"
+version = "0.1.0"
+description = "CLI that forwards Twitch/YouTube live audio to an Icecast server using yt-dlp and ffmpeg."
+authors = [{ name = "Your Name", email = "you@example.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Dependencies – yt‑dlp is the only runtime requirement.
+dependencies = [
+    "yt-dlp>=2024.07.01",
+    # tomli is used on Python < 3.11; on >=3.11 we use the built‑in tomllib
+    "tomli>=2.0.1 ; python_version<'3.11'",
+]
+
+[project.scripts]
+livestream-to-ice-cast = "livestream_to_icecast.app:main"
+
+[tool.uv]
+package = true

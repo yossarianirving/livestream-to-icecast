@@ -1,0 +1,26 @@
+# Example configuration for livestream-to-icecast
+# -------------------------------------------------
+# Livestream source configuration
+# -------------------------------------------------
+platform = "youtube"               # or "youtube"
+channel_url = "https://www.youtube.com/@HasanAbi"
+
+# How often (in seconds) we poll Twitch/YouTube for live status.
+poll_interval = 60
+
+# -------------------------------------------------
+# Icecast server connection details
+# -------------------------------------------------
+[icecast]
+host = "192.168.99.7"
+port = 8005
+mount = "/live"               # mount point on the Icecast server
+source_user = "test"
+source_password = "test"
+
+# -------------------------------------------------
+# Audio encoding options for ffmpeg (optional)
+# -------------------------------------------------
+[audio]
+codec = "libmp3lame"              # libmp3lame, libvorbis, aac, etc.
+bitrate = "128k"
