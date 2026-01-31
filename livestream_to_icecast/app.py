@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import subprocess
 import sys
-import time
-import signal
 import threading
+import time
 from pathlib import Path
 
 from .config import AppConfig, load_config
@@ -159,14 +159,14 @@ def _monitor_stream(cfg: AppConfig) -> None:
             log.info(
                 "Channel not live – checking again in %s seconds", cfg.poll_interval
             )
-            time.sleep(cfg.poll_interval)
+            STOP_EVENT.wait(cfg.poll_interval)
             continue
 
         # Channel is live; obtain an m3u8 URL.
         current_m3u8 = get_m3u8_url(cfg.channel_url)
         if not current_m3u8:
             log.error("Failed to retrieve m3u8 URL while channel appears live")
-            time.sleep(cfg.poll_interval)
+            STOP_EVENT.wait(cfg.poll_interval)
             continue
 
         retries_left = max_retries_per_url
@@ -204,7 +204,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
             retries_left -= 1
             if retries_left > 0:
                 log.info("Retrying current stream – %s attempts left", retries_left)
-                time.sleep(2)  # short back‑off before restarting ffmpeg
+                STOP_EVENT.wait(2)  # short back‑off before restarting ffmpeg
                 continue
 
             # Exhausted retries for this URL – fetch a fresh one.
@@ -220,7 +220,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
             retries_left = max_retries_per_url
 
         # End of broadcast for this live session – pause before next check.
-        time.sleep(cfg.poll_interval)
+        STOP_EVENT.wait(cfg.poll_interval)
 
     # Clean up any lingering ffmpeg process on exit.
     _cleanup_ffmpeg(CURRENT_PROC)
