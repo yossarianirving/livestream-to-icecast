@@ -25,12 +25,55 @@ import logging
 import subprocess
 import sys
 import time
+import signal
+import threading
 from pathlib import Path
 
 from .config import AppConfig, load_config
 from .yt_dlp_helper import get_m3u8_url, is_live
 
 log = logging.getLogger("livestream-to-icecast")
+
+# Global stop event for clean shutdown and reference to the current ffmpeg process.
+STOP_EVENT = threading.Event()
+CURRENT_PROC: subprocess.Popen | None = None
+
+
+def _handle_signal(signum, frame):  # pragma: no cover – exercised via manual signal.
+    """Signal handler that triggers a graceful shutdown.
+
+    It sets ``STOP_EVENT`` which is checked throughout the main loop. The actual
+    termination of the ffmpeg child process happens in the monitoring code to avoid
+    doing heavy work inside the signal context.
+    """
+    log.info("Received signal %s – initiating clean shutdown", signum)
+    STOP_EVENT.set()
+
+
+def _cleanup_ffmpeg(proc: subprocess.Popen | None) -> None:
+    """Terminate a running ffmpeg process gracefully.
+
+    If the process does not exit within 5 seconds, it is force‑killed. Any
+    exception during termination is logged but otherwise ignored to avoid masking
+    the original shutdown reason.
+    """
+    if proc is None:
+        return
+    try:
+        log.info("Terminating ffmpeg process (pid %s)", proc.pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            log.warning("ffmpeg did not terminate in time – killing")
+            proc.kill()
+    except Exception as exc:  # pragma: no cover – defensive
+        log.error("Error while terminating ffmpeg: %s", exc)
+
+
+# Register handlers for common termination signals.
+signal.signal(signal.SIGINT, _handle_signal)
+signal.signal(signal.SIGTERM, _handle_signal)
 
 
 def _build_icecast_url(cfg: AppConfig) -> str:
@@ -46,11 +89,12 @@ def _build_icecast_url(cfg: AppConfig) -> str:
 
 
 def _start_ffmpeg(m3u8_url: str, cfg: AppConfig) -> subprocess.Popen:
-    """Spawn ``ffmpeg`` to read *m3u8_url* and push audio to Icecast.
+    """Spawn ``ffmpeg`` and keep a reference to the process.
 
-    Returns the :class:`subprocess.Popen` object so the caller can monitor its exit
-    status.  The command is deliberately quiet – only errors are printed to stderr.
+    The global ``CURRENT_PROC`` is updated so that signal handling can terminate it
+    cleanly if the program receives SIGINT/SIGTERM.
     """
+    global CURRENT_PROC
     out_url = _build_icecast_url(cfg)
     audio_cfg = cfg.audio
 
@@ -77,12 +121,16 @@ def _start_ffmpeg(m3u8_url: str, cfg: AppConfig) -> subprocess.Popen:
 
     log.info("Starting ffmpeg: %s", " ".join(cmd))
     # ``stdout`` is discarded; we only keep stderr for diagnostics.
-    return subprocess.Popen(
+    proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
     )
+    # Store reference for graceful shutdown.
+    global CURRENT_PROC
+    CURRENT_PROC = proc
+    return proc
 
 
 def _monitor_stream(cfg: AppConfig) -> None:
@@ -96,9 +144,14 @@ def _monitor_stream(cfg: AppConfig) -> None:
       attempts request a fresh URL.  If we cannot obtain a new working URL we wait for
       the next live event.
     """
+    global CURRENT_PROC
     max_retries_per_url = 3
 
     while True:
+        # Check for shutdown request before each iteration.
+        if STOP_EVENT.is_set():
+            log.info("Shutdown requested – exiting monitor loop")
+            break
         # -----------------------------------------------------------------
         # Wait until the channel is broadcasting.
         # -----------------------------------------------------------------
@@ -122,10 +175,16 @@ def _monitor_stream(cfg: AppConfig) -> None:
         # Inner loop: keep ffmpeg running for the *current* stream.
         # -----------------------------------------------------------------
         while True:
+            if STOP_EVENT.is_set():
+                _cleanup_ffmpeg(CURRENT_PROC)
+                return
             proc = _start_ffmpeg(current_m3u8, cfg)
 
             # Poll ffmpeg every few seconds; if it exits we break to retry logic.
             while True:
+                if STOP_EVENT.is_set():
+                    _cleanup_ffmpeg(proc)
+                    return
                 retcode = proc.poll()
                 if retcode is not None:  # Process terminated.
                     err_msg = proc.stderr.read().strip() if proc.stderr else ""
@@ -134,6 +193,8 @@ def _monitor_stream(cfg: AppConfig) -> None:
                         retcode,
                         err_msg or "<empty>",
                     )
+                    # Process is done – clear global reference.
+                    CURRENT_PROC = None
                     break
                 time.sleep(5)
 
@@ -160,6 +221,9 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
         # End of broadcast for this live session – pause before next check.
         time.sleep(cfg.poll_interval)
+
+    # Clean up any lingering ffmpeg process on exit.
+    _cleanup_ffmpeg(CURRENT_PROC)
 
 
 def main() -> None:
