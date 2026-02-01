@@ -19,6 +19,18 @@ source_user = "source"
 source_password = "hackme"
 
 # -------------------------------------------------
+# AzuraCast API (for updating stream metadata)
+# -------------------------------------------------
+azuracast_api_key = "your_azuracast_api_key_here"
+
+# -------------------------------------------------
+# AzuraCast integration (optional)
+# -------------------------------------------------
+[azuracast]
+api_url = "https://azuracast.example.com/api/internal/your_station/metadata"
+bearer_token = "your_azuracast_api_bearer_token"
+
+# -------------------------------------------------
 # Audio encoding options for ffmpeg (optional)
 # -------------------------------------------------
 [audio]

@@ -8,6 +8,7 @@ structure:
 platform = "twitch"                # or "youtube"
 channel_url = "https://www.twitch.tv/your_channel"
 poll_interval = 30                 # seconds between live‑status checks
+azuracast_api_key = "your_bearer_token_here"   # Bearer token for AzuraCast API (optional)
 
 [icecast]
 host = "localhost"
@@ -54,12 +55,23 @@ class AudioConfig:
 
 
 @dataclass
+class AzuraCastConfig:
+    api_url: str
+    bearer_token: str
+    station: str = ""
+    mount: str = ""
+    # Optionally allow more fields for flexibility
+
+
+@dataclass
 class AppConfig:
     platform: str
     channel_url: str
     poll_interval: int
     icecast: IcecastConfig
     audio: AudioConfig
+    azuracast: AzuraCastConfig | None = None
+    azuracast_api_key: str = ""
 
 
 def load_config(path: Path) -> AppConfig:
@@ -101,6 +113,19 @@ def load_config(path: Path) -> AppConfig:
 
     audio_cfg = data.get("audio", {})
 
+    azuracast_cfg = data.get("azuracast")
+    azuracast = None
+    if azuracast_cfg:
+        for key in ("api_url", "bearer_token"):
+            if key not in azuracast_cfg:
+                raise ValueError(f"Azuracast configuration missing required key: {key}")
+        azuracast = AzuraCastConfig(
+            api_url=azuracast_cfg["api_url"],
+            bearer_token=azuracast_cfg["bearer_token"],
+            station=azuracast_cfg.get("station", ""),
+            mount=azuracast_cfg.get("mount", ""),
+        )
+
     return AppConfig(
         platform=data["platform"],
         channel_url=data["channel_url"],
@@ -116,4 +141,5 @@ def load_config(path: Path) -> AppConfig:
             codec=audio_cfg.get("codec", "libmp3lame"),
             bitrate=audio_cfg.get("bitrate", "128k"),
         ),
+        azuracast=azuracast,
     )

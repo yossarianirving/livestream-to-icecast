@@ -8,7 +8,6 @@ output.  All error handling is performed by raising ``RuntimeError`` (or returni
 
 from __future__ import annotations
 
-
 import logging
 import subprocess
 from typing import Optional
@@ -49,6 +48,37 @@ def is_live(channel_url: str) -> bool:
     except Exception as exc:  # pragma: no cover – defensive fallback
         log.debug("is_live check failed: %s", exc)
         return False
+
+
+def get_stream_info(channel_url: str) -> Optional[tuple[str, str]]:
+    """
+    Obtain the best-audio (usually an m3u8 playlist) URL and the title for a live stream.
+
+    Returns:
+        (m3u8_url, title) if available, otherwise None.
+    """
+    import json
+
+    try:
+        # Use yt-dlp to get JSON metadata
+        output = _run_yt_dlp(["-J", "-f", "bestaudio", channel_url])
+        info = json.loads(output)
+        title = info.get("title", "")
+        # Find the best m3u8 URL in formats
+        m3u8_url = None
+        for fmt in info.get("formats", []):
+            if fmt.get("protocol") == "m3u8" and fmt.get("url"):
+                m3u8_url = fmt["url"]
+                break
+        if not m3u8_url:
+            # fallback: try url field
+            m3u8_url = info.get("url")
+        if m3u8_url and title:
+            return m3u8_url, title
+        return None
+    except Exception as exc:
+        log.error("Failed to get stream info: %s", exc)
+        return None
 
 
 def get_m3u8_url(channel_url: str) -> Optional[str]:

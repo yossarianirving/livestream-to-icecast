@@ -29,8 +29,9 @@ import threading
 import time
 from pathlib import Path
 
+from .azuracast_helper import update_azuracast_metadata
 from .config import AppConfig, load_config
-from .yt_dlp_helper import get_m3u8_url, is_live
+from .yt_dlp_helper import get_m3u8_url, get_stream_info, is_live
 
 log = logging.getLogger("livestream-to-icecast")
 
@@ -162,12 +163,19 @@ def _monitor_stream(cfg: AppConfig) -> None:
             STOP_EVENT.wait(cfg.poll_interval)
             continue
 
-        # Channel is live; obtain an m3u8 URL.
-        current_m3u8 = get_m3u8_url(cfg.channel_url)
-        if not current_m3u8:
-            log.error("Failed to retrieve m3u8 URL while channel appears live")
+        # Channel is live; obtain stream info (m3u8 URL and title).
+        stream_info = get_stream_info(cfg.channel_url)
+        if not stream_info:
+            log.error("Failed to retrieve stream info while channel appears live")
             STOP_EVENT.wait(cfg.poll_interval)
             continue
+
+        current_m3u8, current_title = stream_info
+
+        # Update AzuraCast metadata if configured
+        if getattr(cfg, "azuracast", None):
+            artist = cfg.channel_url.split("/")[-1] if cfg.channel_url else ""
+            update_azuracast_metadata(cfg.azuracast, title=current_title, artist=artist)
 
         retries_left = max_retries_per_url
 
@@ -208,15 +216,23 @@ def _monitor_stream(cfg: AppConfig) -> None:
                 continue
 
             # Exhausted retries for this URL – fetch a fresh one.
-            new_m3u8 = get_m3u8_url(cfg.channel_url)
-            if not new_m3u8 or new_m3u8 == current_m3u8:
+            new_stream_info = get_stream_info(cfg.channel_url)
+            if not new_stream_info or new_stream_info[0] == current_m3u8:
                 log.error(
                     "Unable to obtain a new working m3u8 URL. Waiting for channel to go offline"
                 )
                 break  # exit inner loop; outer will re‑check live status.
 
             log.info("Obtained fresh m3u8 URL – resetting retry counter")
-            current_m3u8 = new_m3u8
+            current_m3u8, current_title = new_stream_info
+
+            # Update AzuraCast metadata if configured
+            if getattr(cfg, "azuracast", None):
+                artist = cfg.channel_url.split("/")[-1] if cfg.channel_url else ""
+                update_azuracast_metadata(
+                    cfg.azuracast, title=current_title, artist=artist
+                )
+
             retries_left = max_retries_per_url
 
         # End of broadcast for this live session – pause before next check.
