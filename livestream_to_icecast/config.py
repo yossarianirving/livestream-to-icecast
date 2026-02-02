@@ -67,6 +67,7 @@ class AzuraCastConfig:
 class AppConfig:
     platform: str
     channel_url: str
+    channel_name: str
     poll_interval: int
     icecast: IcecastConfig
     audio: AudioConfig
@@ -129,6 +130,7 @@ def load_config(path: Path) -> AppConfig:
     return AppConfig(
         platform=data["platform"],
         channel_url=data["channel_url"],
+        channel_name=data["channel_name"],
         poll_interval=int(data.get("poll_interval", 30)),
         icecast=IcecastConfig(
             host=ice_cfg["host"],

@@ -31,7 +31,7 @@ def update_azuracast_metadata(cfg, title: str, artist: str) -> bool:
         return False
 
     headers = {
-        "X-API-Token": f"{cfg.bearer_token}",
+        "X-API-Key": f"{cfg.bearer_token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }

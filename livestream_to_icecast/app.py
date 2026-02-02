@@ -170,12 +170,12 @@ def _monitor_stream(cfg: AppConfig) -> None:
             STOP_EVENT.wait(cfg.poll_interval)
             continue
 
-        current_m3u8, current_title = stream_info
-
         # Update AzuraCast metadata if configured
         if getattr(cfg, "azuracast", None):
-            artist = cfg.channel_url.split("/")[-1] if cfg.channel_url else ""
-            update_azuracast_metadata(cfg.azuracast, title=current_title, artist=artist)
+            artist = cfg.channel_name
+            update_azuracast_metadata(
+                cfg.azuracast, title=stream_info.title, artist=artist
+            )
 
         retries_left = max_retries_per_url
 
@@ -186,7 +186,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
             if STOP_EVENT.is_set():
                 _cleanup_ffmpeg(CURRENT_PROC)
                 return
-            proc = _start_ffmpeg(current_m3u8, cfg)
+            proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
 
             # Poll ffmpeg every few seconds; if it exits we break to retry logic.
             while True:
@@ -217,22 +217,21 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
             # Exhausted retries for this URL – fetch a fresh one.
             new_stream_info = get_stream_info(cfg.channel_url)
-            if not new_stream_info or new_stream_info[0] == current_m3u8:
+            if not new_stream_info or new_stream_info.m3u8_url == stream_info.m3u8_url:
                 log.error(
                     "Unable to obtain a new working m3u8 URL. Waiting for channel to go offline"
                 )
                 break  # exit inner loop; outer will re‑check live status.
 
             log.info("Obtained fresh m3u8 URL – resetting retry counter")
-            current_m3u8, current_title = new_stream_info
 
             # Update AzuraCast metadata if configured
             if getattr(cfg, "azuracast", None):
-                artist = cfg.channel_url.split("/")[-1] if cfg.channel_url else ""
+                artist = cfg.channel_name
                 update_azuracast_metadata(
-                    cfg.azuracast, title=current_title, artist=artist
+                    cfg.azuracast, title=new_stream_info.title, artist=artist
                 )
-
+            stream_info = new_stream_info
             retries_left = max_retries_per_url
 
         # End of broadcast for this live session – pause before next check.

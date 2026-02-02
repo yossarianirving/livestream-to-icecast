@@ -10,9 +10,17 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from typing import Optional
 
 log = logging.getLogger("livestream-to-icecast")
+
+
+@dataclass
+class StreamInfo:
+    title: str
+    description: str
+    m3u8_url: str
 
 
 def _run_yt_dlp(args: list[str]) -> str:
@@ -50,12 +58,12 @@ def is_live(channel_url: str) -> bool:
         return False
 
 
-def get_stream_info(channel_url: str) -> Optional[tuple[str, str]]:
+def get_stream_info(channel_url: str) -> Optional[StreamInfo]:
     """
     Obtain the best-audio (usually an m3u8 playlist) URL and the title for a live stream.
 
     Returns:
-        (m3u8_url, title) if available, otherwise None.
+        (m3u8_url, title, description) if available, otherwise None.
     """
     import json
 
@@ -64,8 +72,10 @@ def get_stream_info(channel_url: str) -> Optional[tuple[str, str]]:
         output = _run_yt_dlp(["-J", "-f", "bestaudio", channel_url])
         info = json.loads(output)
         title = info.get("title", "")
+        description = info.get("description")
         # Find the best m3u8 URL in formats
         m3u8_url = None
+
         for fmt in info.get("formats", []):
             if fmt.get("protocol") == "m3u8" and fmt.get("url"):
                 m3u8_url = fmt["url"]
@@ -73,8 +83,8 @@ def get_stream_info(channel_url: str) -> Optional[tuple[str, str]]:
         if not m3u8_url:
             # fallback: try url field
             m3u8_url = info.get("url")
-        if m3u8_url and title:
-            return m3u8_url, title
+        if m3u8_url and title and description:
+            return StreamInfo(title=title, m3u8_url=m3u8_url, description=description)
         return None
     except Exception as exc:
         log.error("Failed to get stream info: %s", exc)
