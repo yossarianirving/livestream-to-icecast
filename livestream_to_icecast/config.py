@@ -102,7 +102,13 @@ def load_config(path: Path) -> AppConfig:
     # -----------------------------------------------------------------
     # Basic validation – we keep it simple but explicit.
     # -----------------------------------------------------------------
-    required_root_keys = {"platform", "channel_url", "poll_interval", "icecast"}
+    required_root_keys = {
+        "platform",
+        "channel_url",
+        "channel_name",
+        "poll_interval",
+        "icecast",
+    }
     missing = required_root_keys - set(data.keys())
     if missing:
         raise ValueError(f"Missing required top‑level config keys: {missing}")
@@ -117,13 +123,14 @@ def load_config(path: Path) -> AppConfig:
     azuracast_cfg = data.get("azuracast")
     azuracast = None
     if azuracast_cfg:
-        for key in ("api_url", "bearer_token"):
+        # Require base API URL, bearer token, and station number for AzuraCast integration.
+        for key in ("api_url", "bearer_token", "station"):
             if key not in azuracast_cfg:
                 raise ValueError(f"Azuracast configuration missing required key: {key}")
         azuracast = AzuraCastConfig(
             api_url=azuracast_cfg["api_url"],
             bearer_token=azuracast_cfg["bearer_token"],
-            station=azuracast_cfg.get("station", ""),
+            station=str(azuracast_cfg["station"]),
             mount=azuracast_cfg.get("mount", ""),
         )
 

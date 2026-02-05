@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-from .azuracast_helper import update_azuracast_metadata
+from .azuracast_helper import update_azuracast_metadata, get_current_azuracast_metadata
 from .config import AppConfig, load_config
 from .yt_dlp_helper import get_m3u8_url, get_stream_info, is_live
 
@@ -171,11 +171,21 @@ def _monitor_stream(cfg: AppConfig) -> None:
             continue
 
         # Update AzuraCast metadata if configured
+        # Update AzuraCast metadata if configured and changed.
         if getattr(cfg, "azuracast", None):
-            artist = cfg.channel_name
-            update_azuracast_metadata(
-                cfg.azuracast, title=stream_info.title, artist=artist
-            )
+            new_title = stream_info.title
+            new_artist = cfg.channel_name
+            current_meta = get_current_azuracast_metadata(cfg.azuracast)
+            if (
+                not current_meta
+                or current_meta.get("title") != new_title
+                or current_meta.get("artist") != new_artist
+            ):
+                update_azuracast_metadata(
+                    cfg.azuracast, title=new_title, artist=new_artist
+                )
+            else:
+                log.info("AzuraCast metadata unchanged; skipping update.")
 
         retries_left = max_retries_per_url
 
@@ -225,12 +235,23 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
             log.info("Obtained fresh m3u8 URL – resetting retry counter")
 
-            # Update AzuraCast metadata if configured
+            # Update AzuraCast metadata if configured and changed.
             if getattr(cfg, "azuracast", None):
-                artist = cfg.channel_name
-                update_azuracast_metadata(
-                    cfg.azuracast, title=new_stream_info.title, artist=artist
-                )
+                new_title = new_stream_info.title
+                new_artist = cfg.channel_name
+                current_meta = get_current_azuracast_metadata(cfg.azuracast)
+                if (
+                    not current_meta
+                    or current_meta.get("title") != new_title
+                    or current_meta.get("artist") != new_artist
+                ):
+                    update_azuracast_metadata(
+                        cfg.azuracast, title=new_title, artist=new_artist
+                    )
+                else:
+                    log.info(
+                        "AzuraCast metadata unchanged after fresh URL – skipping update."
+                    )
             stream_info = new_stream_info
             retries_left = max_retries_per_url
 

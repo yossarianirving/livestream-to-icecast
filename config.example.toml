@@ -4,6 +4,7 @@
 # -------------------------------------------------
 platform = "twitch"               # or "youtube"
 channel_url = "https://www.twitch.tv/your_channel"
+channel_name = "YourChannelName"
 
 # How often (in seconds) we poll Twitch/YouTube for live status.
 poll_interval = 30
@@ -27,8 +28,9 @@ azuracast_api_key = "your_azuracast_api_key_here"
 # AzuraCast integration (optional)
 # -------------------------------------------------
 [azuracast]
-api_url = "https://azuracast.example.com/api/internal/your_station/metadata"
+api_url = "https://azuracast.example.com"
 bearer_token = "your_azuracast_api_bearer_token"
+station = "1"
 
 # -------------------------------------------------
 # Audio encoding options for ffmpeg (optional)
