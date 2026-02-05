@@ -13,6 +13,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
+import requests
+
 log = logging.getLogger("livestream-to-icecast")
 
 
@@ -105,3 +107,14 @@ def get_m3u8_url(channel_url: str) -> Optional[str]:
         return url
     except Exception:
         return None
+
+
+def check_m3u8_url(m3u8_url: str) -> bool:
+    try:
+        response = requests.get(m3u8_url, timeout=10)
+        if response.status_code != 200:
+            return False
+        return True
+
+    except:
+        return False

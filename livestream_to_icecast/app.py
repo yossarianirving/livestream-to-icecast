@@ -31,7 +31,7 @@ from pathlib import Path
 
 from .azuracast_helper import get_current_azuracast_metadata, update_azuracast_metadata
 from .config import AppConfig, load_config
-from .yt_dlp_helper import get_m3u8_url, get_stream_info, is_live
+from .yt_dlp_helper import check_m3u8_url, get_m3u8_url, get_stream_info, is_live
 
 log = logging.getLogger("livestream-to-icecast")
 
@@ -148,7 +148,6 @@ def _monitor_stream(cfg: AppConfig) -> None:
       the next live event.
     """
     global CURRENT_PROC
-    max_retries_per_url = 3
 
     while True:
         # Check for shutdown request before each iteration.
@@ -167,11 +166,14 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
         # Channel is live; obtain stream info (m3u8 URL and title).
         stream_info = get_stream_info(cfg.channel_url)
+
         if not stream_info:
             log.error("Failed to retrieve stream info while channel appears live")
             STOP_EVENT.wait(cfg.poll_interval)
             continue
 
+        # Stream url used to check if it is still up
+        stream_url = stream_info.m3u8_url
         # Update AzuraCast metadata if configured
         # Update AzuraCast metadata if configured and changed.
         if getattr(cfg, "azuracast", None):
@@ -189,53 +191,52 @@ def _monitor_stream(cfg: AppConfig) -> None:
             else:
                 log.info("AzuraCast metadata unchanged; skipping update.")
 
-        retries_left = max_retries_per_url
-
         # -----------------------------------------------------------------
         # Inner loop: keep ffmpeg running for the *current* stream.
         # -----------------------------------------------------------------
         while True:
             if STOP_EVENT.is_set():
                 _cleanup_ffmpeg(CURRENT_PROC)
+                update_azuracast_metadata(
+                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                )
                 return
-            proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
+
+            proc = None
+            if CURRENT_PROC is not None:
+                log.info("CURRENT_PROC is fine")
+                proc = CURRENT_PROC
+            else:
+                log.info("CURRENT_PROC is None")
+                proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
 
             # Poll ffmpeg every few seconds; if it exits we break to retry logic.
-            while True:
-                if STOP_EVENT.is_set():
-                    _cleanup_ffmpeg(proc)
-                    return
-                retcode = proc.poll()
-                if retcode is not None:  # Process terminated.
-                    err_msg = proc.stderr.read().strip() if proc.stderr else ""
-                    log.warning(
-                        "ffmpeg exited (code %s). Stderr: %s",
-                        retcode,
-                        err_msg or "<empty>",
-                    )
-                    # Process is done – clear global reference.
-                    CURRENT_PROC = None
-                    break
-                time.sleep(5)
+            if STOP_EVENT.is_set():
+                _cleanup_ffmpeg(proc)
+                return
+            retcode = proc.poll()
+            if retcode is not None:  # Process terminated.
+                err_msg = proc.stderr.read().strip() if proc.stderr else ""
+                log.warning(
+                    "ffmpeg exited (code %s). Stderr: %s",
+                    retcode,
+                    err_msg or "<empty>",
+                )
+                # Process is done – clear global reference.
+                CURRENT_PROC = None
+                break
 
-            # -----------------------------------------------------------------
-            # Retry the same URL a limited number of times.
-            # -----------------------------------------------------------------
-            retries_left -= 1
-            if retries_left > 0:
-                log.info("Retrying current stream – %s attempts left", retries_left)
-                STOP_EVENT.wait(2)  # short back‑off before restarting ffmpeg
-                continue
-
-            # Exhausted retries for this URL – fetch a fresh one.
             new_stream_info = get_stream_info(cfg.channel_url)
-            if not new_stream_info or new_stream_info.m3u8_url == stream_info.m3u8_url:
+
+            if not new_stream_info:
+                _cleanup_ffmpeg(CURRENT_PROC)
                 log.error(
                     "Unable to obtain a new working m3u8 URL. Waiting for channel to go offline"
                 )
+                update_azuracast_metadata(
+                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                )
                 break  # exit inner loop; outer will re‑check live status.
-
-            log.info("Obtained fresh m3u8 URL – resetting retry counter")
 
             # Update AzuraCast metadata if configured and changed.
             if getattr(cfg, "azuracast", None):
@@ -255,7 +256,13 @@ def _monitor_stream(cfg: AppConfig) -> None:
                         "AzuraCast metadata unchanged after fresh URL – skipping update."
                     )
             stream_info = new_stream_info
-            retries_left = max_retries_per_url
+            # Check if curent stream is still up
+            stream_ok = check_m3u8_url(stream_url)
+            if not stream_ok:
+                _cleanup_ffmpeg(CURRENT_PROC)
+                CURRENT_PROC = None
+                continue
+            STOP_EVENT.wait(cfg.poll_interval)
 
         # End of broadcast for this live session – pause before next check.
         STOP_EVENT.wait(cfg.poll_interval)
