@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-from .azuracast_helper import update_azuracast_metadata, get_current_azuracast_metadata
+from .azuracast_helper import get_current_azuracast_metadata, update_azuracast_metadata
 from .config import AppConfig, load_config
 from .yt_dlp_helper import get_m3u8_url, get_stream_info, is_live
 
@@ -115,6 +115,8 @@ def _start_ffmpeg(m3u8_url: str, cfg: AppConfig) -> subprocess.Popen:
         audio_cfg.codec,
         "-b:a",
         audio_cfg.bitrate,
+        "-ac",
+        "1",
         "-f",
         fmt,
         out_url,
