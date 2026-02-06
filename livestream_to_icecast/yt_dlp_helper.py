@@ -21,7 +21,6 @@ log = logging.getLogger("livestream-to-icecast")
 @dataclass
 class StreamInfo:
     title: str
-    description: str
     m3u8_url: str
 
 
@@ -60,7 +59,7 @@ def is_live(channel_url: str) -> bool:
         return False
 
 
-def get_stream_info(channel_url: str) -> Optional[StreamInfo]:
+def get_stream_info(channel_url: str, platform: str) -> Optional[StreamInfo]:
     """
     Obtain the best-audio (usually an m3u8 playlist) URL and the title for a live stream.
 
@@ -73,8 +72,11 @@ def get_stream_info(channel_url: str) -> Optional[StreamInfo]:
         # Use yt-dlp to get JSON metadata
         output = _run_yt_dlp(["-J", "-f", "bestaudio", channel_url])
         info = json.loads(output)
-        title = info.get("title", "")
-        description = info.get("description")
+        title = "LIVE"
+        if platform == "twitch":
+            title = info.get("description", "")
+        elif platform == "youtube":
+            title = info.get("title", "")
         # Find the best m3u8 URL in formats
         m3u8_url = None
 
@@ -85,8 +87,8 @@ def get_stream_info(channel_url: str) -> Optional[StreamInfo]:
         if not m3u8_url:
             # fallback: try url field
             m3u8_url = info.get("url")
-        if m3u8_url and title and description:
-            return StreamInfo(title=title, m3u8_url=m3u8_url, description=description)
+        if m3u8_url and title:
+            return StreamInfo(title=title, m3u8_url=m3u8_url)
         return None
     except Exception as exc:
         log.error("Failed to get stream info: %s", exc)

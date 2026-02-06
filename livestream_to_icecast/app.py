@@ -165,7 +165,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
             continue
 
         # Channel is live; obtain stream info (m3u8 URL and title).
-        stream_info = get_stream_info(cfg.channel_url)
+        stream_info = get_stream_info(cfg.channel_url, cfg.platform)
 
         if not stream_info:
             log.error("Failed to retrieve stream info while channel appears live")
@@ -204,10 +204,8 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
             proc = None
             if CURRENT_PROC is not None:
-                log.info("CURRENT_PROC is fine")
                 proc = CURRENT_PROC
             else:
-                log.info("CURRENT_PROC is None")
                 proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
 
             # Poll ffmpeg every few seconds; if it exits we break to retry logic.
@@ -222,11 +220,14 @@ def _monitor_stream(cfg: AppConfig) -> None:
                     retcode,
                     err_msg or "<empty>",
                 )
+                update_azuracast_metadata(
+                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                )
                 # Process is done – clear global reference.
                 CURRENT_PROC = None
                 break
 
-            new_stream_info = get_stream_info(cfg.channel_url)
+            new_stream_info = get_stream_info(cfg.channel_url, cfg.platform)
 
             if not new_stream_info:
                 _cleanup_ffmpeg(CURRENT_PROC)
