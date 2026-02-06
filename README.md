@@ -58,7 +58,7 @@ station = "1"
 
 [audio]
 codec = "libmp3lame"   # libmp3lame, libvorbis, aac, …
-bitrate = "128k"
+bitrate = "256k"
 ```
 
 Only the `[icecast]` table is mandatory; other sections are optional.
@@ -78,27 +78,3 @@ The CLI will:
 5. Optionally update AzuraCast metadata while the stream is active.
 
 Press `Ctrl+C` to stop gracefully.
-
-## Development
-
-The project includes a test suite and linting configuration.
-
-```sh
-# Run tests
-pytest -vv
-
-# Lint with Ruff
-ruff check .
-
-# Auto‑fix simple issues
-ruff --fix .
-
-# Format code with Black (line length 88)
-black .
-```
-
-Type checking can be performed with:
-
-```sh
-mypy livestream_to_icecast
-```
