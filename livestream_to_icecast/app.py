@@ -260,6 +260,10 @@ def _monitor_stream(cfg: AppConfig) -> None:
                 with PROC_LOCK:
                     _cleanup_ffmpeg(CURRENT_PROC)
                     CURRENT_PROC = None
+                if cfg.azuracast:
+                    update_azuracast_metadata(
+                        cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                    )
                 continue
 
             STOP_EVENT.wait(cfg.poll_interval)
