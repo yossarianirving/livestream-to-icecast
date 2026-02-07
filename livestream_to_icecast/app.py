@@ -196,6 +196,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
         # Inner loop: keep ffmpeg running for the *current* stream.
         # -----------------------------------------------------------------
         while True:
+            # Check if user has terminated the program
             if STOP_EVENT.is_set():
                 with PROC_LOCK:
                     proc = CURRENT_PROC
@@ -213,15 +214,9 @@ def _monitor_stream(cfg: AppConfig) -> None:
             if proc is None:
                 proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
 
-            # Poll ffmpeg every few seconds; if it exits we break to retry logic.
-            if STOP_EVENT.is_set():
-                with PROC_LOCK:
-                    proc = CURRENT_PROC
-                _cleanup_ffmpeg(proc)
-                return
-
+            # Check status of ffmpeg process.
             retcode = proc.poll()
-            if retcode is not None:  # Process terminated.
+            if retcode is not None:  # Process terminated by error in ffmpeg process
                 err_msg = ""
                 with proc.stderr:
                     err_msg = proc.stderr.read(4096).strip() if proc.stderr else ""
@@ -241,6 +236,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
             new_stream_info = get_stream_info(cfg.channel_url, cfg.platform)
 
+            # If new stream info is None, that means the channel is not streaming
             if not new_stream_info:
                 with PROC_LOCK:
                     _cleanup_ffmpeg(CURRENT_PROC)
@@ -254,9 +250,28 @@ def _monitor_stream(cfg: AppConfig) -> None:
                 break  # exit inner loop; outer will re‑check live status.
 
             stream_info = new_stream_info
-            # Check if current stream is still up
+            # Update AzuraCast metadata if configured and changed.
+            if cfg.azuracast:
+                new_title = stream_info.title
+                new_artist = cfg.channel_name
+                current_meta = get_current_azuracast_metadata(cfg.azuracast)
+                if (
+                    not current_meta
+                    or current_meta.get("title") != new_title
+                    or current_meta.get("artist") != new_artist
+                ):
+                    update_azuracast_metadata(
+                        cfg.azuracast, title=new_title, artist=new_artist
+                    )
+                else:
+                    log.info("AzuraCast metadata unchanged; skipping update.")
+            # Check if current stream (from outer loop) is still up
+            # Checking stream info tends to lag
             stream_ok = check_m3u8_url(stream_url)
             if not stream_ok:
+                log.error(
+                    "Current m3u8 url has ended. Return to checking if channel is live"
+                )
                 with PROC_LOCK:
                     _cleanup_ffmpeg(CURRENT_PROC)
                     CURRENT_PROC = None
@@ -264,7 +279,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
                     update_azuracast_metadata(
                         cfg.azuracast, title="OFFLINE", artist="OFFLINE"
                     )
-                continue
+                break
 
             STOP_EVENT.wait(cfg.poll_interval)
 
