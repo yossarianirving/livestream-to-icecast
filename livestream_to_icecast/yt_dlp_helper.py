@@ -8,6 +8,7 @@ output.  All error handling is performed by raising ``RuntimeError`` (or returni
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from dataclasses import dataclass
@@ -66,8 +67,6 @@ def get_stream_info(channel_url: str, platform: str) -> Optional[StreamInfo]:
     Returns:
         (m3u8_url, title, description) if available, otherwise None.
     """
-    import json
-
     try:
         # Use yt-dlp to get JSON metadata
         output = _run_yt_dlp(["-J", "-f", "bestaudio", channel_url])
@@ -79,7 +78,6 @@ def get_stream_info(channel_url: str, platform: str) -> Optional[StreamInfo]:
             title = info.get("title", "")
         # Find the best m3u8 URL in formats
         m3u8_url = None
-
         for fmt in info.get("formats", []):
             if fmt.get("protocol") == "m3u8" and fmt.get("url"):
                 m3u8_url = fmt["url"]
@@ -89,7 +87,6 @@ def get_stream_info(channel_url: str, platform: str) -> Optional[StreamInfo]:
             m3u8_url = info.get("url")
         if m3u8_url and title:
             return StreamInfo(title=title, m3u8_url=m3u8_url)
-        return None
     except Exception as exc:
         log.error("Failed to get stream info: %s", exc)
         return None
@@ -105,18 +102,16 @@ def get_m3u8_url(channel_url: str) -> Optional[str]:
         url = _run_yt_dlp(
             ["-g", "-f", "bestaudio", "--no-check-certificate", channel_url]
         )
-        log.info(f"Found stream {url}")
+        log.info("Found stream %s", url)
         return url
     except Exception:
         return None
 
 
 def check_m3u8_url(m3u8_url: str) -> bool:
+    """Check if an m3u8 URL is accessible and returns HTTP 200."""
     try:
         response = requests.get(m3u8_url, timeout=10)
-        if response.status_code != 200:
-            return False
-        return True
-
-    except:
+        return response.status_code == 200
+    except Exception:
         return False

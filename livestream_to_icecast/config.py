@@ -27,6 +27,7 @@ Only the ``icecast`` table is mandatory; ``audio`` falls back to MP3 128 kbps 
 
 from __future__ import annotations
 
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,17 +135,29 @@ def load_config(path: Path) -> AppConfig:
             mount=azuracast_cfg.get("mount", ""),
         )
 
+    platform = data["platform"]
+    if platform not in ("twitch", "youtube"):
+        raise ValueError(f"Invalid platform: {platform}. Must be 'twitch' or 'youtube'")
+
+    channel_url = data["channel_url"]
+    if not channel_url.strip():
+        raise ValueError("channel_url cannot be empty")
+
+    poll_interval = int(data.get("poll_interval"))
+    if poll_interval <= 0:
+        raise ValueError(f"poll_interval must be positive, got: {poll_interval}")
+
     return AppConfig(
-        platform=data["platform"],
-        channel_url=data["channel_url"],
+        platform=platform,
+        channel_url=channel_url,
         channel_name=data["channel_name"],
-        poll_interval=int(data.get("poll_interval", 30)),
+        poll_interval=poll_interval,
         icecast=IcecastConfig(
-            host=ice_cfg["host"],
+            host=str(ice_cfg["host"]),
             port=int(ice_cfg["port"]),
             mount=str(ice_cfg["mount"]).lstrip("/"),
-            source_user=ice_cfg["source_user"],
-            source_password=ice_cfg["source_password"],
+            source_user=str(ice_cfg["source_user"]),
+            source_password=str(ice_cfg["source_password"]),
         ),
         audio=AudioConfig(
             codec=audio_cfg.get("codec", "libmp3lame"),

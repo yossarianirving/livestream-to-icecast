@@ -1,40 +1,37 @@
-# Example configuration for livestream-to-icecast
-# -------------------------------------------------
-# Livestream source configuration
-# -------------------------------------------------
+# Example configuration for livestream-to-icecast Docker deployment
+#
+# Instructions:
+# 1. Copy this file to config.toml: cp config.example.toml config.toml
+# 2. Edit with your actual credentials and settings
+# 3. Ensure Icecast server is accessible from the container
+#    - For local development, run icecast service or use host.docker.internal
+#    - For production, use your Icecast server's IP/hostname
+#
+# For Docker Compose, mount the config file as a volume:
+#   volumes:
+#     - ./config.toml:/app/config/config.toml:ro
+
 platform = "twitch"               # or "youtube"
 channel_url = "https://www.twitch.tv/your_channel"
 channel_name = "YourChannelName"
 
-# How often (in seconds) we poll Twitch/YouTube for live status.
-poll_interval = 30
+poll_interval = 30                # seconds between live-status checks
 
-# -------------------------------------------------
-# Icecast server connection details
-# -------------------------------------------------
 [icecast]
+# For Docker, use the service name (e.g., icecast) if using docker-compose network
+# For local development, use host.docker.internal to reach host services
 host = "localhost"
 port = 8000
 mount = "/live.mp3"               # mount point on the Icecast server
 source_user = "source"
-source_password = "hackme"
+source_password = "hackme"        # CHANGE THIS in production!
 
-# -------------------------------------------------
-# AzuraCast API (for updating stream metadata)
-# -------------------------------------------------
-azuracast_api_key = "your_azuracast_api_key_here"
-
-# -------------------------------------------------
-# AzuraCast integration (optional)
-# -------------------------------------------------
 [azuracast]
 api_url = "https://azuracast.example.com"
-bearer_token = "your_azuracast_api_bearer_token"
+bearer_token = "your_bearer_token_here"
 station = "1"
 
-# -------------------------------------------------
-# Audio encoding options for ffmpeg (optional)
-# -------------------------------------------------
 [audio]
-codec = "libmp3lame"              # libmp3lame, libvorbis, aac, etc.
-bitrate = "128k"
+codec = "libmp3lame"              # libmp3lame, libvorbis, aac
+bitrate = "256k"                  # 128k, 192k, 256k, 320k
+

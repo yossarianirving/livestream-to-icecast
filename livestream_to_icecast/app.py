@@ -6,12 +6,12 @@ The script follows the workflow described in the original request:
 1. Load configuration from a TOML file (default ``config.toml``).
 2. Periodically check whether the configured Twitch/YouTube channel is live using
    :func:`yt_dlp_helper.is_live`.
-3. When the channel goes live, obtain an HLS (m3u8) audio URL via
+3. When the channel goes live, obtain an HLS (`m3u8`) URL via
    :func:`yt_dlp_helper.get_m3u8_url`.
 4. Launch ``ffmpeg`` to pull the audio and push it to Icecast.
 5. If the stream stops or ``ffmpeg`` exits unexpectedly we retry a few times with
-   the same URL, then fetch a fresh one; if that also fails we wait for the next
-   live event.
+    the same URL, then fetch a fresh one; if that also fails we wait for the next
+    live event.
 
 All heavy lifting (network calls) is delegated to external binaries – ``yt‑dlp``
 and ``ffmpeg`` – which must be present on the system's ``PATH``.  The script only
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,13 +32,14 @@ from pathlib import Path
 
 from .azuracast_helper import get_current_azuracast_metadata, update_azuracast_metadata
 from .config import AppConfig, load_config
-from .yt_dlp_helper import check_m3u8_url, get_m3u8_url, get_stream_info, is_live
+from .yt_dlp_helper import check_m3u8_url, get_stream_info, is_live
 
 log = logging.getLogger("livestream-to-icecast")
 
 # Global stop event for clean shutdown and reference to the current ffmpeg process.
 STOP_EVENT = threading.Event()
 CURRENT_PROC: subprocess.Popen | None = None
+PROC_LOCK = threading.Lock()
 
 
 def _handle_signal(signum, frame):  # pragma: no cover – exercised via manual signal.
@@ -95,7 +97,6 @@ def _start_ffmpeg(m3u8_url: str, cfg: AppConfig) -> subprocess.Popen:
     The global ``CURRENT_PROC`` is updated so that signal handling can terminate it
     cleanly if the program receives SIGINT/SIGTERM.
     """
-    global CURRENT_PROC
     out_url = _build_icecast_url(cfg)
     audio_cfg = cfg.audio
 
@@ -132,7 +133,8 @@ def _start_ffmpeg(m3u8_url: str, cfg: AppConfig) -> subprocess.Popen:
     )
     # Store reference for graceful shutdown.
     global CURRENT_PROC
-    CURRENT_PROC = proc
+    with PROC_LOCK:
+        CURRENT_PROC = proc
     return proc
 
 
@@ -144,7 +146,7 @@ def _monitor_stream(cfg: AppConfig) -> None:
     * Poll for live status every ``cfg.poll_interval`` seconds.
     * When live, fetch an m3u8 URL and start ffmpeg.
     * If ffmpeg exits, retry a few times with the same URL; after exhausting those
-      attempts request a fresh URL.  If we cannot obtain a new working URL we wait for
+      attempts request a fresh one.  If we cannot obtain a new working URL we wait for
       the next live event.
     """
     global CURRENT_PROC
@@ -174,9 +176,8 @@ def _monitor_stream(cfg: AppConfig) -> None:
 
         # Stream url used to check if it is still up
         stream_url = stream_info.m3u8_url
-        # Update AzuraCast metadata if configured
         # Update AzuraCast metadata if configured and changed.
-        if getattr(cfg, "azuracast", None):
+        if cfg.azuracast:
             new_title = stream_info.title
             new_artist = cfg.channel_name
             current_meta = get_current_azuracast_metadata(cfg.azuracast)
@@ -196,80 +197,93 @@ def _monitor_stream(cfg: AppConfig) -> None:
         # -----------------------------------------------------------------
         while True:
             if STOP_EVENT.is_set():
-                _cleanup_ffmpeg(CURRENT_PROC)
-                update_azuracast_metadata(
-                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
-                )
+                with PROC_LOCK:
+                    proc = CURRENT_PROC
+                _cleanup_ffmpeg(proc)
+                if cfg.azuracast:
+                    update_azuracast_metadata(
+                        cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                    )
                 return
 
             proc = None
-            if CURRENT_PROC is not None:
-                proc = CURRENT_PROC
-            else:
+            with PROC_LOCK:
+                if CURRENT_PROC is not None:
+                    proc = CURRENT_PROC
+            if proc is None:
                 proc = _start_ffmpeg(stream_info.m3u8_url, cfg)
 
             # Poll ffmpeg every few seconds; if it exits we break to retry logic.
             if STOP_EVENT.is_set():
+                with PROC_LOCK:
+                    proc = CURRENT_PROC
                 _cleanup_ffmpeg(proc)
                 return
+
             retcode = proc.poll()
             if retcode is not None:  # Process terminated.
-                err_msg = proc.stderr.read().strip() if proc.stderr else ""
+                err_msg = ""
+                with proc.stderr:
+                    err_msg = proc.stderr.read(4096).strip() if proc.stderr else ""
                 log.warning(
                     "ffmpeg exited (code %s). Stderr: %s",
                     retcode,
                     err_msg or "<empty>",
                 )
-                update_azuracast_metadata(
-                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
-                )
+                if cfg.azuracast:
+                    update_azuracast_metadata(
+                        cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                    )
                 # Process is done – clear global reference.
-                CURRENT_PROC = None
+                with PROC_LOCK:
+                    CURRENT_PROC = None
                 break
 
             new_stream_info = get_stream_info(cfg.channel_url, cfg.platform)
 
             if not new_stream_info:
-                _cleanup_ffmpeg(CURRENT_PROC)
+                with PROC_LOCK:
+                    _cleanup_ffmpeg(CURRENT_PROC)
                 log.error(
                     "Unable to obtain a new working m3u8 URL. Waiting for channel to go offline"
                 )
-                update_azuracast_metadata(
-                    cfg.azuracast, title="OFFLINE", artist="OFFLINE"
-                )
+                if cfg.azuracast:
+                    update_azuracast_metadata(
+                        cfg.azuracast, title="OFFLINE", artist="OFFLINE"
+                    )
                 break  # exit inner loop; outer will re‑check live status.
 
-            # Update AzuraCast metadata if configured and changed.
-            if getattr(cfg, "azuracast", None):
-                new_title = new_stream_info.title
-                new_artist = cfg.channel_name
-                current_meta = get_current_azuracast_metadata(cfg.azuracast)
-                if (
-                    not current_meta
-                    or current_meta.get("title") != new_title
-                    or current_meta.get("artist") != new_artist
-                ):
-                    update_azuracast_metadata(
-                        cfg.azuracast, title=new_title, artist=new_artist
-                    )
-                else:
-                    log.info(
-                        "AzuraCast metadata unchanged after fresh URL – skipping update."
-                    )
             stream_info = new_stream_info
-            # Check if curent stream is still up
+            # Check if current stream is still up
             stream_ok = check_m3u8_url(stream_url)
             if not stream_ok:
-                _cleanup_ffmpeg(CURRENT_PROC)
-                CURRENT_PROC = None
+                with PROC_LOCK:
+                    _cleanup_ffmpeg(CURRENT_PROC)
+                    CURRENT_PROC = None
                 continue
+
             STOP_EVENT.wait(cfg.poll_interval)
 
         # End of broadcast for this live session – pause before next check.
         STOP_EVENT.wait(cfg.poll_interval)
 
     # Clean up any lingering ffmpeg process on exit.
-    _cleanup_ffmpeg(CURRENT_PROC)
+    with PROC_LOCK:
+        _cleanup_ffmpeg(CURRENT_PROC)
+
+
+def _check_prerequisites() -> None:
+    """Verify required external binaries are available on PATH."""
+    missing = []
+    for binary in ("yt-dlp", "ffmpeg"):
+        if shutil.which(binary) is None:
+            missing.append(binary)
+    if missing:
+        log.error(
+            "Missing required binaries: %s. Please install them and add to PATH.",
+            ", ".join(missing),
+        )
+        sys.exit(1)
 
 
 def main() -> None:
@@ -298,6 +312,7 @@ def main() -> None:
         log.error("Failed to load configuration: %s", exc)
         sys.exit(1)
 
+    _check_prerequisites()
     log.info("Starting livestream‑to‑icecast for channel: %s", cfg.channel_url)
     _monitor_stream(cfg)
 

@@ -2,7 +2,7 @@
 """Helper for interacting with AzuraCast now‑playing metadata via API."""
 
 import logging
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import requests
 

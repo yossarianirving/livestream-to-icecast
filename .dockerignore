@@ -1,0 +1,63 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Documentation (optional - include if you want to exclude)
+docs/
+
+# Test files
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Logs and temporary files
+logs/
+tmp/
+temp/
+
+# Configuration examples (users will provide their own)
+config.example.toml
+.env*
+
+# IDE folders
+*.code-workspace
+.DS_Store

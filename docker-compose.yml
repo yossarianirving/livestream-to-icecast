@@ -1,0 +1,88 @@
+# livestream-to-icecast Docker Compose Configuration
+#
+# This compose file defines:
+# - The main application service (livestream-to-icecast)
+# - Example Icecast server for testing (optional, uncomment to use)
+#
+# Usage:
+#   # Start with your own config
+#   cp config.example.toml config.toml  # Edit your configuration first!
+#   docker-compose up -d
+#
+#   # View logs
+#   docker-compose logs -f
+#
+#   # Stop the services
+#   docker-compose down
+
+version: "3.8"
+
+services:
+  livestream-to-icecast:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livestream-to-icecast
+    restart: unless-stopped
+
+    # Configure logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Mount configuration file (REQUIRED - provide your own)
+    volumes:
+      - ./config.toml:/app/config/config.toml:ro
+      - livestream-to-icecast_logs:/app/logs
+
+    # Environment variables (overrides config if needed)
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Security settings
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+
+    # Network isolation
+    networks:
+      - icecast-network
+
+  # Optional: Example Icecast server (for local development/testing)
+  # Uncomment and configure as needed for local testing
+  #
+  # icecast:
+  #   image: boksit/icecast:latest
+  #   container_name: icecast-server
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - ICECAST_SOURCE_PASSWORD=hackme
+  #     - ICECAST_RELAY_PASSWORD=relay
+  #     - ICECAST_ADMIN_PASSWORD=admin
+  #   volumes:
+  #     - icecast-config:/etc/icecast2
+  #     - icecast-logs:/var/log/icecast2
+  #   networks:
+  #     - icecast-network
+
+volumes:
+  livestream-to-icecast_logs:
+  # Uncomment for Icecast example
+  # icecast-config:
+  # icecast-logs:
+
+networks:
+  icecast-network:
+    driver: bridge
